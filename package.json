@@ -1,0 +1,18 @@
+{
+  "name": "jev-evaluation-demo",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "tsc --noEmit",
+    "test": "node --experimental-strip-types --test test/database.test.ts"
+  },
+  "dependencies": {
+    "@duckdb/node-api": "^1.5.5-r.5",
+    "ai": "^7.0.105"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@vercel/node": "latest",
+    "typescript": "^5.9.0"
+  }
+}

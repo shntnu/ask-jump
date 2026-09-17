@@ -1,0 +1,11 @@
+node_modules/
+.vercel/
+.env*
+!.env.example
+*.duckdb
+*.duckdb.wal
+*.sqlite
+*.log
+.DS_Store
+coverage/
+dist/

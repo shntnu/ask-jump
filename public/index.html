@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ask JUMP</title>
+  <style>
+    :root { font: 16px/1.55 'Avenir Next', Avenir, sans-serif; color: #182d42; background: #f4f7fb; }
+    * { box-sizing: border-box; }
+    body { margin: 0; }
+    main { max-width: 1180px; margin: auto; padding: 36px 28px 70px; }
+    header { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; border-bottom: 2px solid #ccd9e6; padding-bottom: 16px; }
+    h1 { font-size: 34px; letter-spacing: -.04em; margin: 0; }
+    h2 { font-size: 19px; margin: 0 0 12px; }
+    p { max-width: 76ch; }
+    a { color: #1758a2; }
+    .muted, .hint { color: #52677c; font-size: 14px; }
+    .intro { margin: 28px 0 18px; font-size: 21px; }
+    label { display: block; font-weight: 600; margin-bottom: 8px; }
+    textarea { width: 100%; padding: 16px; border: 1px solid #9eb3c9; border-radius: 6px; background: white; color: inherit; font: inherit; resize: vertical; }
+    #question { min-height: 95px; }
+    #sql { min-height: 300px; font: 14px/1.65 Menlo, Consolas, monospace; tab-size: 2; }
+    button { font: inherit; border: 0; border-radius: 5px; padding: 10px 18px; background: #1758a2; color: white; cursor: pointer; }
+    button:disabled { opacity: .5; cursor: wait; }
+    button:hover:not(:disabled) { background: #104780; }
+    :focus-visible { outline: 3px solid #c37919; outline-offset: 3px; }
+    .actions, .examples { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 12px; }
+    .examples { margin-bottom: 24px; }
+    .examples button, .secondary { color: #1758a2; background: #e4edf7; font-size: 14px; }
+    .examples button:hover:not(:disabled), .secondary:hover:not(:disabled) { background: #ccdff3; }
+    #status { margin: 20px 0; padding: 12px 16px; background: #e4edf7; border-left: 4px solid #1758a2; }
+    #status.error { background: #fff0e1; border-color: #a64912; }
+    .workspace { display: grid; grid-template-columns: 1.25fr 1fr; gap: 30px; margin-top: 28px; }
+    .review { padding: 20px; background: #fff; border-radius: 8px; }
+    .metric { display: grid; grid-template-columns: 1fr 70px; gap: 10px; margin: 14px 0; }
+    progress { width: 100%; height: 7px; grid-column: 1 / -1; accent-color: #1758a2; }
+    .score { text-align: right; font-variant-numeric: tabular-nums; }
+    .verdict { font-size: 23px; font-weight: 600; }
+    .warning { color: #924911; }
+    #results { margin-top: 32px; }
+    .table-wrap { overflow: auto; max-height: 550px; border: 1px solid #ccd9e6; border-radius: 6px; background: white; }
+    table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid #e3eaf1; white-space: nowrap; max-width: 500px; overflow: hidden; text-overflow: ellipsis; }
+    th { background: #e4edf7; position: sticky; top: 0; }
+    tr:nth-child(even) { background: #f7faff; }
+    .timings { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 24px; color: #52677c; font-size: 13px; }
+    details { margin-top: 24px; }
+    summary { cursor: pointer; }
+    pre { overflow: auto; font-size: 12px; max-height: 300px; }
+    [hidden] { display: none !important; }
+    @media (max-width: 740px) { main { padding: 22px 16px; } header { display: block; } .workspace { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+<main>
+  <header><h1>Ask JUMP</h1><span class="muted">Cell Painting metadata / <a href="https://github.com/jump-cellpainting/datasets/releases/tag/v0.13">v0.13</a></span></header>
+  <p class="intro">Ask about the experiment. Inspect the query. Test the reviewer.</p>
+  <p class="muted">1,151,808 wells across 2,525 plates. GPT-OSS writes SQL; Jev assesses the question and reviews the query; DuckDB returns the data.</p>
+  <form id="ask">
+    <label for="question">What would you like to know?</label>
+    <textarea id="question" maxlength="2000" required>Which sources have the most DMSO wells?</textarea>
+    <div class="actions"><button id="generate">Generate SQL and query</button><span class="hint">Metadata only: no morphology measurements or phenotype scores.</span></div>
+  </form>
+  <div class="examples" aria-label="Example questions">
+    <button type="button" data-question="Which sources have the most DMSO wells?">DMSO wells by source</button>
+    <button type="button" data-question="Which genes have both CRISPR and ORF wells? List distinct gene IDs and symbols.">Genes in both modalities</button>
+    <button type="button" data-question="Which compounds produce the strongest mitochondrial phenotype?">Try an unsupported question</button>
+  </div>
+  <div id="status" role="status" aria-live="polite" hidden></div>
+  <div class="workspace" id="workspace" hidden>
+    <section>
+      <label for="sql">SQL</label>
+      <textarea id="sql" maxlength="12000" spellcheck="false"></textarea>
+      <div class="actions"><button id="review">Review and run edited SQL</button><button id="break" class="secondary">Try counting plates instead</button></div>
+      <p class="hint">Change the SQL to test Jev. For the DMSO example, count distinct plates instead of wells and compare the assessments.</p>
+    </section>
+    <section class="review" aria-label="Jev assessment">
+      <h2>Jev's assessment</h2>
+      <div id="gate"></div>
+      <p class="verdict" id="verdict"></p>
+      <div id="metrics"></div>
+      <p class="hint">Probabilities are model estimates, not calibrated guarantees. Review is advisory: even a flagged SELECT can run so you can inspect its results.</p>
+    </section>
+  </div>
+  <section id="results" hidden>
+    <h2 id="result-title">Results</h2>
+    <p id="result-warning" class="warning" hidden>Jev flagged this query. These rows may not answer your question.</p>
+    <div class="table-wrap"><table><thead id="head"></thead><tbody id="body"></tbody></table></div>
+  </section>
+  <div class="timings" id="timings"></div>
+  <details id="raw-details" hidden><summary>Inspect the model output</summary><pre id="raw"></pre></details>
+  <details><summary>What's in this database?</summary><p class="muted">Wells link plates to perturbations. Compound, CRISPR and ORF tables describe those perturbations. Control annotations identify DMSO and other controls. Plate metadata links to microscope settings and CellProfiler versions. General compound names, dose, treatment time and morphology measurements are absent.</p></details>
+  <p class="hint">Queries are read-only, limited to 200 returned rows and 8 seconds of execution. Each generation or review uses your Vercel AI Gateway credits. First use may take longer while the release database downloads.</p>
+</main>
+<script>
+  const el = id => document.getElementById(id);
+  const labels = { joins: 'Joins are appropriate', filters: 'Filters match the question', aggregation: 'Correct unit of aggregation', matchesQuestion: 'Answers the question' };
+  let activeQuestion = '';
+  function status(message, error = false) { el('status').hidden = false; el('status').textContent = message; el('status').className = error ? 'error' : ''; }
+  function invalidate() { el('results').hidden = true; el('metrics').replaceChildren(); el('verdict').textContent = 'Not reviewed yet'; }
+  el('sql').addEventListener('input', invalidate);
+  el('question').addEventListener('input', () => { el('workspace').hidden = true; el('results').hidden = true; });
+  document.querySelectorAll('[data-question]').forEach(button => button.addEventListener('click', () => { el('question').value = button.dataset.question; run(false); }));
+  el('ask').addEventListener('submit', event => { event.preventDefault(); run(false); });
+  el('review').addEventListener('click', () => run(true));
+  el('break').addEventListener('click', () => {
+    const sql = el('sql').value;
+    const wellAlias = sql.match(/\b(?:FROM|JOIN)\s+well\s+(?:AS\s+)?(\w+)/i)?.[1];
+    const column = wellAlias && !['join', 'where', 'on', 'group', 'order'].includes(wellAlias.toLowerCase()) ? wellAlias + '.Metadata_Plate' : 'Metadata_Plate';
+    el('sql').value = sql.replace(/count\s*\(\s*\*\s*\)/i, 'count(DISTINCT ' + column + ')');
+    invalidate();
+    status(el('sql').value === sql ? 'Replace the well-count expression with count(DISTINCT Metadata_Plate), then review the edited SQL.' : 'Changed the count from wells to plates. Review the edited SQL to test Jev.');
+  });
+  async function run(edited) {
+    const question = el('question').value.trim();
+    if (!question) return status('Enter a question first.', true);
+    if (edited && activeQuestion !== question) return status('The question changed. Generate a new query first.', true);
+    const sql = edited ? el('sql').value : undefined;
+    document.querySelectorAll('button').forEach(b => b.disabled = true);
+    el('question').disabled = true; el('sql').disabled = true;
+    el('results').hidden = true; el('workspace').hidden = true; el('raw-details').hidden = true;
+    el('timings').replaceChildren();
+    status(edited ? 'Jev is reviewing your edited SQL, then DuckDB will run it...' : 'Checking answerability, generating SQL, reviewing it with Jev, and querying DuckDB...');
+    try {
+      const response = await fetch('/api/evaluate', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ question, sql }) });
+      const data = await response.json();
+      activeQuestion = question;
+      if (data.sql) { el('sql').value = data.sql; el('workspace').hidden = false; }
+      el('gate').textContent = data.gate ? 'Question: ' + data.gate.choice.replaceAll('_', ' ') : '';
+      el('metrics').replaceChildren();
+      el('verdict').textContent = '';
+      if (data.review) {
+        el('verdict').textContent = 'Query: ' + data.review.verdict.choice;
+        el('verdict').className = 'verdict' + (data.review.verdict.choice !== 'accept' ? ' warning' : '');
+        for (const [key, label] of Object.entries(labels)) {
+          const p = data.review[key].probability;
+          const row = document.createElement('div'); row.className = 'metric';
+          const name = document.createElement('span'); name.textContent = label;
+          const value = document.createElement('span'); value.className = 'score'; value.textContent = Math.round(p * 100) + '%';
+          const bar = document.createElement('progress'); bar.max = 1; bar.value = p; bar.setAttribute('aria-label', label);
+          row.append(name, value, bar); el('metrics').append(row);
+        }
+      }
+      for (const [name, ms] of Object.entries(data.timings || {})) {
+        const span = document.createElement('span'); span.textContent = name + ': ' + (ms / 1000).toFixed(2) + ' s'; el('timings').append(span);
+      }
+      el('raw').textContent = JSON.stringify(data, null, 2); el('raw-details').hidden = false;
+      if (!response.ok) throw new Error(data.error || 'Request failed.');
+      if (data.result) {
+        el('head').replaceChildren(); el('body').replaceChildren();
+        const header = document.createElement('tr');
+        for (const column of data.result.columns) { const cell = document.createElement('th'); cell.textContent = column; header.append(cell); }
+        el('head').append(header);
+        for (const values of data.result.rows) {
+          const row = document.createElement('tr');
+          for (const value of values) { const cell = document.createElement('td'); cell.textContent = value === null ? 'NULL' : typeof value === 'object' ? JSON.stringify(value) : String(value); row.append(cell); }
+          el('body').append(row);
+        }
+        el('results').hidden = false;
+        el('result-title').textContent = 'Results / ' + data.result.rows.length + ' rows' + (data.result.truncated ? ' (first 200 shown)' : '');
+        el('result-warning').hidden = data.review.verdict.choice === 'accept';
+        status(data.result.rows.length ? 'Query complete. Edit the SQL to challenge the reviewer.' : 'Query completed with no matching rows.');
+      } else status(data.message);
+    } catch (error) { status(error.message, true); }
+    finally { document.querySelectorAll('button').forEach(b => b.disabled = false); el('question').disabled = false; el('sql').disabled = false; }
+  }
+</script>
+</body>
+</html>
